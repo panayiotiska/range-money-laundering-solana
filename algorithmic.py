@@ -3,6 +3,12 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import os
+from matplotlib.patches import Patch
+import seaborn as sns
+
+# Set the style for all plots
+plt.style.use('dark_background')
+sns.set_theme(style="darkgrid")
 
 # Create visuals directory if it doesn't exist
 os.makedirs('visuals', exist_ok=True)
@@ -126,10 +132,10 @@ def identify_suspicious_patterns():
     return suspicious_cases
 
 def visualize_suspicious_case(creator, token, case_number, stats):
-    # Get all transactions for this token (only buy and sell)
+    # Get all transactions for this token (buy, sell, and transfer)
     token_txs = df[
         ((df['AddressTo'] == token) | (df['AddressFrom'] == token)) &
-        (df['EdgeType'].isin(['buy', 'sell']))
+        (df['EdgeType'].isin(['buy', 'sell', 'transfer']))
     ].copy()
     
     # Create a directed graph
@@ -141,44 +147,111 @@ def visualize_suspicious_case(creator, token, case_number, stats):
                   edge_type=tx['EdgeType'],
                   cardinality=tx['Cardinality'])
     
-    # Create the plot
-    plt.figure(figsize=(12, 8))
+    # Set up the figure with a dark background
+    plt.figure(figsize=(15, 10), facecolor='#1a1a1a')
+    ax = plt.gca()
+    ax.set_facecolor('#1a1a1a')
     
-    # Use spring layout for better visualization
-    pos = nx.spring_layout(G, k=1, iterations=50)
+    # Use spring layout with adjusted parameters for better visualization
+    pos = nx.spring_layout(G, k=2, iterations=100, seed=42)
     
-    # Draw edges
-    edge_colors = ['red' if G[u][v]['edge_type'] == 'sell' else 'green' 
-                  for u, v in G.edges()]
+    # Separate edges by type
+    buy_edges = [(u, v) for u, v, d in G.edges(data=True) if d['edge_type'] == 'buy']
+    sell_edges = [(u, v) for u, v, d in G.edges(data=True) if d['edge_type'] == 'sell']
+    transfer_edges = [(u, v) for u, v, d in G.edges(data=True) if d['edge_type'] == 'transfer']
     
-    # Draw the network
-    nx.draw_networkx_edges(G, pos, edge_color=edge_colors, alpha=0.6)
-    nx.draw_networkx_nodes(G, pos, 
-                          node_color='lightblue',
-                          node_size=500)
+    # Draw buy edges in green with arrows
+    nx.draw_networkx_edges(G, pos, edgelist=buy_edges, 
+                          edge_color='#00ff00', alpha=0.7,
+                          arrows=True, arrowsize=20, width=2,
+                          connectionstyle='arc3,rad=0.1')
+    
+    # Draw sell edges in red with arrows
+    nx.draw_networkx_edges(G, pos, edgelist=sell_edges,
+                          edge_color='#ff0000', alpha=0.7,
+                          arrows=True, arrowsize=20, width=2,
+                          connectionstyle='arc3,rad=-0.1')
+    
+    # Draw transfer edges in orange with arrows
+    nx.draw_networkx_edges(G, pos, edgelist=transfer_edges,
+                          edge_color='#ffa500', alpha=0.7,
+                          arrows=True, arrowsize=20, width=2,
+                          connectionstyle='arc3,rad=0.2')
+    
+    # Draw regular nodes with a modern style
+    nx.draw_networkx_nodes(G, pos,
+                          node_color='#4a90e2',
+                          node_size=800,
+                          alpha=0.8,
+                          edgecolors='white',
+                          linewidths=2)
     
     # Highlight the creator node
     if creator in G.nodes():
         nx.draw_networkx_nodes(G, pos,
                              nodelist=[creator],
-                             node_color='red',
-                             node_size=1000)
+                             node_color='#ff6b6b',
+                             node_size=1200,
+                             alpha=0.9,
+                             edgecolors='white',
+                             linewidths=3)
     
-    # Add labels only for important nodes
+    # Add labels with better formatting
     labels = {node: node[:8] + '...' if node != creator else 'CREATOR'
              for node in G.nodes()}
-    nx.draw_networkx_labels(G, pos, labels, font_size=8)
+    nx.draw_networkx_labels(G, pos, labels, 
+                           font_size=10,
+                           font_color='white',
+                           font_weight='bold')
     
-    # Add title with statistics
-    plt.title(f'Suspicious Case #{case_number}\n'
-             f'Token: {token[:8]}...\n'
-             f'Total Trades: {stats["total_trades"]} | '
-             f'Creator Involvement: {stats["creator_involved"]} ({stats["creator_ratio"]:.1%})\n'
-             f'Creator Buys: {stats["creator_buys"]} | '
-             f'Creator Sells: {stats["creator_sells"]}')
+    # Create custom legend
+    legend_elements = [
+        Patch(facecolor='#4a90e2', edgecolor='white', label='Trader'),
+        Patch(facecolor='#ff6b6b', edgecolor='white', label='Token Creator'),
+        plt.Line2D([0], [0], color='#00ff00', lw=2, label='Buy Transaction'),
+        plt.Line2D([0], [0], color='#ff0000', lw=2, label='Sell Transaction'),
+        plt.Line2D([0], [0], color='#ffa500', lw=2, label='Transfer')
+    ]
+    
+    # Add legend with custom styling
+    legend = plt.legend(handles=legend_elements, 
+                       loc='upper right',
+                       facecolor='#1a1a1a',
+                       edgecolor='none',
+                       labelcolor='white',
+                       fontsize=10)
+    
+    # Add title with statistics in a modern style
+    title_text = (
+        f'Suspicious Trading Pattern Analysis\n'
+        f'Case #{case_number}\n\n'
+        f'Token: {token[:8]}...\n'
+        f'Total Trades: {stats["total_trades"]} | '
+        f'Creator Involvement: {stats["creator_involved"]} ({stats["creator_ratio"]:.1%})\n'
+        f'Creator Buys: {stats["creator_buys"]} | '
+        f'Creator Sells: {stats["creator_sells"]}'
+    )
+    plt.title(title_text, color='white', pad=20, fontsize=12)
+    
+    # Add explanatory text
+    explanation = (
+        "This visualization shows trading patterns for a potentially suspicious token.\n"
+        "Green arrows indicate buy transactions, red arrows indicate sell transactions,\n"
+        "and orange arrows show transfers. The red node represents the token creator,\n"
+        "who is actively involved in trading. Suspicious patterns include high creator\n"
+        "involvement and both buy/sell activity."
+    )
+    plt.figtext(0.02, 0.02, explanation, color='white', fontsize=10, wrap=True)
+    
     plt.axis('off')
     plt.tight_layout()
-    plt.savefig(f'visuals/suspicious_case_{case_number}.png', dpi=300, bbox_inches='tight')
+    
+    # Save with high DPI and transparent background
+    plt.savefig(f'visuals/suspicious_case_{case_number}.png', 
+                dpi=300, 
+                bbox_inches='tight',
+                facecolor='#1a1a1a',
+                edgecolor='none')
     plt.close()
 
 def main():
